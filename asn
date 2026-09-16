@@ -12,7 +12,7 @@
 # │ (Launch the script without parameters or visit the project's homepage for usage info)│
 # ╰──────────────────────────────────────────────────────────────────────────────────────╯
 
-ASN_VERSION="0.82.0"
+ASN_VERSION="0.83.0"
 
 # ╭──────────────────╮
 # │ Helper functions │
@@ -2663,9 +2663,11 @@ IPGeoRepLookup(){
 			ip_type_json_output+=",\"org_type\":\"$orgtype\""
 		fi
 	fi
-	# Reputation lookup (stopforumspam.org), noise classification (greynoise.io) and threat analysis (ipqualityscore.com)
+	# Reputation lookup (stopforumspam.org), noise classification (greynoise.io) and threat analysis (ipqualityscore.com / ffraud.com)
 	ip_rep_data="${green}✓ NONE${default}"
 	json_rep="none"
+	iqs_output=""
+	ffraud_success=""
 	json_iqs_threat_score=""
 	json_iqs_threat_tags=""
 	is_blacklisted=$(docurl -m4 -s "https://api.stopforumspam.org/api?json&ip=$1" | jq -r '.ip.appears')
@@ -2720,6 +2722,44 @@ IPGeoRepLookup(){
 			fi
 		fi
 	fi
+	if [ -z "$iqs_output" ]; then
+		# no IPQualityScore lookup was performed, fetch threat analysis data from the free ffraud.com public API
+		ffraud_output=$(docurl -m4 -s "https://api.ffraud.com/public/ip/$1")
+		ffraud_success=$(jq -r '.success' <<<"$ffraud_output" 2>/dev/null)
+		if [ "$ffraud_success" = true ]; then
+			ffraud_score=$(jq -r '.fraud_score' <<<"$ffraud_output")
+			if [ "$ffraud_score" -lt 40 ]; then
+				ip_rep_data="✓ GOOD"
+				ip_rep_color="$green"
+				json_rep="good"
+			elif [ "$ffraud_score" -lt 75 ]; then
+				ip_rep_data="✓ AVERAGE"
+				ip_rep_color="$green"
+				json_rep="average"
+			elif [ "$ffraud_score" -lt 85 ]; then
+				ip_rep_data="! SUSPICIOUS"
+				ip_rep_color="$yellow"
+				json_rep="suspicious"
+			else
+				ip_rep_data="❌ BAD"
+				ip_rep_color="$red"
+				json_rep="bad"
+			fi
+			ip_rep_data="${ip_rep_color}${ip_rep_data} (Threat Score ${ffraud_score}%)${default}"
+			json_iqs_threat_score+=",\"threat_score\":\"$ffraud_score\""
+			ffraud_risk=$(jq -r '.risk // empty' <<<"$ffraud_output")
+			[[ -n "$ffraud_risk" ]] && json_iqs_threat_tags+=",\"risk\":\"$ffraud_risk\""
+			ffraud_subnet_abuse=$(jq -r '.subnet_abuse_ratio // empty' <<<"$ffraud_output")
+			[[ -n "$ffraud_subnet_abuse" ]] && json_iqs_threat_tags+=",\"subnet_abuse_ratio\":$ffraud_subnet_abuse"
+			ffraud_tags=$(jq -c 'select (.threat_tags != null) | .threat_tags' <<<"$ffraud_output")
+			if [ -n "$ffraud_tags" ]; then
+				json_iqs_threat_tags+=",\"threat_tags\":$ffraud_tags"
+				for ffraud_tag in $(jq -r '.[]' <<<"$ffraud_tags"); do
+					ip_rep_data+=" ${redbg} $(tr '[:lower:]_' '[:upper:] ' <<<"$ffraud_tag") ${default}"
+				done
+			fi
+		fi
+	fi
 	# GreyNoise lookup
 	greynoise_data=$(docurl -m5 -s "https://api.greynoise.io/v3/community/$1")
 	gn_noisy=false
@@ -2741,14 +2781,19 @@ IPGeoRepLookup(){
 			gn_name="as \"$gn_name\" ${default}"
 		fi
 		if [ "$gn_riot" = "true" ] || [ "$gn_classification" = "benign" ]; then
-			# GreyNoise known-good
-			ip_rep_data="${green}✓${default} ${greenbg} KNOWN GOOD $gn_name"
+			# GreyNoise known-good (append to second-level IQS/ffraud results if present, otherwise overwrite)
+			if [ -n "$iqs_output" ] || [ "$ffraud_success" = true ]; then
+				ip_rep_data+=" ${greenbg} KNOWN GOOD $gn_name"
+			else
+				ip_rep_data="${green}✓${default} ${greenbg} KNOWN GOOD $gn_name"
+			fi
 			json_rep="good"
 			gn_json_is_knowngood=true
 			[[ "$gn_noisy" = "true" ]] && ip_rep_data+=" ${yellowbg} SEEN SCANNING ${default}"
 		elif [ "$gn_classification" = "malicious" ]; then
 			# GreyNoise known-bad
-			[[ "$is_blacklisted" != "1" ]] && ip_rep_data="${red}❌ BAD${default}" # tag the IP with a bad REP, it wasn't caught by StopForumSpam earlier
+			# tag the IP with a bad REP if it wasn't caught by StopForumSpam or a second-level (IQS/ffraud) lookup earlier
+			[[ "$is_blacklisted" != "1" ]] && [ -z "$iqs_output" ] && [ "$ffraud_success" != true ] && ip_rep_data="${red}❌ BAD${default}"
 			ip_rep_data+=" ${redbg} SCANNER $gn_name"
 			json_rep="bad"
 			gn_json_is_knownbad=true

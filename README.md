@@ -116,6 +116,7 @@ The script uses the following services for data retrieval:
 * [ip-api](https://ip-api.com/)
 * [StopForumSpam](https://www.stopforumspam.com/)
 * [IP Quality Score](https://www.ipqualityscore.com)
+* [ffraud.com](https://ffraud.com/)
 * [Cloudflare Radar](https://radar.cloudflare.com/)
 * [ISC DSHIELD](https://isc.sans.edu/)
 * [GreyNoise](https://greynoise.io)
@@ -485,7 +486,7 @@ Either way, `asn` will pick up your token on the next run (no need to restart th
 
 <details><summary><b>IP reputation API token details</b></summary><p>
 
-The script will perform first-level IPv4/v6 reputation lookups using [StopForumSpam](https://www.stopforumspam.com/), and in case of a match it will perform a second-level, in-depth threat analysis for targets and trace hops using the [IPQualityScore](https://www.ipqualityscore.com/) API. The StopForumSpam API is free and requires no sign-up, and the service aggregates a [huge](https://www.stopforumspam.com/contributors) amount of blacklist feeds.
+The script will perform first-level IPv4/v6 reputation lookups using [StopForumSpam](https://www.stopforumspam.com/), and in case of a match it will perform a second-level, in-depth threat analysis for targets and trace hops using the [IPQualityScore](https://www.ipqualityscore.com/) API. When no IPQualityScore lookup is performed (no token configured, or the target was not flagged by StopForumSpam), threat analysis data (threat score, risk level, threat tags such as `C2 SERVER` or `SSH BRUTE FORCE`, and subnet abuse ratio) is fetched from the free, keyless [ffraud.com](https://ffraud.com/) public API instead. The StopForumSpam API is free and requires no sign-up, and the service aggregates a [huge](https://www.stopforumspam.com/contributors) amount of blacklist feeds.
 
 Still, in order to use the IPQualityScore API for in-depth threat reporting, it's necessary to [sign up](https://www.ipqualityscore.com/create-account) for their service (it's free) and get an API token (it will be emailed to you on sign-up), which will entitle you to 5000 free lookups per month.
 
@@ -760,7 +761,7 @@ IQS_CUSTOM_SETTINGS=""
 ##### *Organization data, IP Reputation, noise classification and IP fingerprinting*
 
 * Organization data is taken from pWhois
-* IP reputation data is taken from StopForumSpam and IpQualityScore
+* IP reputation data is taken from StopForumSpam, IpQualityScore and FFraud.
   > Reputation is also enriched with IP *noise* classification (addresses that have been observed scanning the Internet, and very likely to appear in your logs), taken from [GreyNoise](https://greynoise.io). This will also help identify known-good IPs (e.g. Google networks, CDNs, etc.) from aggressive, known-malicious scanners.
 * IP fingerprinting data is retrieved from Shodan's [InternetDB API](https://internetdb.shodan.io/). Data includes open ports, [software/hardware information](https://en.wikipedia.org/wiki/Common_Platform_Enumeration) and [known vulnerabilities](https://en.wikipedia.org/wiki/Common_Vulnerabilities_and_Exposures) pertaining to the IP address.
 
